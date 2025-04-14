@@ -1,0 +1,174 @@
+#####################################################################################################
+### TOST avec les SE Asymtotiques (Normal, Student) et correction de Gallant ########################
+################ Sur les effets du traitement sur  AUC et Cmax (notés Beta_AUC et beta_Cmax) ########
+########################## Etudes en bras Parallèle #################################################
+#### 2 séquences de sujets : une reçoit le traitement T, l'autre le traitement R ####################
+
+#####Remove object and variable from the working space
+rm(list=ls())
+
+####Load required R packages
+library(mvtnorm)
+library(saemix)
+library(car)
+
+####Parametrisation of saemix R package:
+####Numbers of chains and iter for SAEM algorithm
+nb_chains=10
+nb_iter=c(300, 100)
+
+####Treatment effects beta^Tr_{log_AUC} and beta^Tr_log{C_max}
+delta <-log(1.25)
+
+####quantile of the standard normal distribution for wald test (TOST asymptotique)
+quant<-qnorm(0.95)
+
+###defining the model for saemix / cf page 4 doc package saemix
+model1cpt<-function(psi,id,xidep) {
+  dose<-xidep[,1]
+  tim<-xidep[,2]
+  ka<-psi[id,1]
+  V<-psi[id,2]
+  CL<-psi[id,3]
+  k<-CL/V
+  ypred<-dose*ka/(V*(ka-k))*(exp(-k*tim)-exp(-ka*tim))
+  return(ypred)
+}
+
+# Chargement des données
+tab<-read.table("dataset_1.txt",header=T,sep=" ",dec=".",na=".")
+  
+  
+####Appropriate format to fit with saemix
+  tab <- subset(tab, is.na(tab$Dose))
+  tab$Dose=4
+  tab<-tab[,c(1,5,2,3,4)]
+  ####Create treatment indicator: 0 for Reference treatment, 1 for Test treatment
+  for (j in 1:nrow(tab)){
+    if(tab$Tr[j]=="R"){tab$Treat[j]<-0} else{tab$Treat[j]<-1}
+  }
+  tab$Tr=NULL
+  tab<-tab[,c(1,2,3,5,4)]
+  tab$Treat <- as.numeric(tab$Treat)
+  ####Number of sampling times
+  nb_t<-sum(tab$Id[tab$Id==1])
+  ####Number of subjects
+  n<-nrow(tab)/nb_t
+
+  ####Quantile of the student distribution for wald BE test
+  quant_stud<-qt(1-0.05,df=(n*nb_t-5))
+  quant_gallant<-qt(1-0.05,df=n-3)
+  
+  # Ajustement du Modèle non linéaire à effets mixtes aux données avec package saemix
+  
+  saemix.data<- saemixData(name.data=tab,header=TRUE,sep=" ",na=NA,
+                            name.group=c("Id"),name.predictors=c("Dose","Time"),name.covariates = c("Treat"),name.response=c("Concentration"),
+                            name.X="Time",units=list(x="hr",y="mg/L"))
+  
+  saemix.modelb<-saemixModel(model=model1cpt,
+                            description="One-compartment model with first-order absorption",
+                            psi0=matrix(c(1.5,0.5,0.04,0,0,0),ncol=3,nrow=2, byrow=TRUE,
+                            dimnames=list(NULL, c("ka","V","CL"))),
+                            transform.par=c(1,1,1), 
+                            covariate.model=matrix(c(1,1,1),ncol=3), # fixed.estim=c(1,1,1),
+                            covariance.model=matrix(c(1,0,0,0,1,0,0,0,1),ncol=3,byrow=TRUE),
+                            omega.init=matrix(c(0.05,0,0,0,0.0125,0,0,0,0.05),ncol=3,byrow=TRUE),
+                            error.model="combined",error.init=c(0.1,0.1))
+  
+  ####fitting the model (parameters -> ka, Cl, V)
+  mod1<-saemix(saemix.modelb,saemix.data,list(nb.chains=nb_chains,nbiter.saemix = nb_iter))
+
+    ####Delta method to compute beta_Cmax and to get asymptotic SE(beta_Cmax)
+  estimates<-c(mod1@results@fixed.effects[1],mod1@results@fixed.effects[2],mod1@results@fixed.effects[3],mod1@results@fixed.effects[4],mod1@results@fixed.effects[5],mod1@results@fixed.effects[6])
+  names(estimates)<-c("Ka","beta_Ka","V","beta_V","Cl","beta_Cl")
+  FIM<-(mod1@results@fim)
+  fim_fixed<-FIM[1:6,1:6]
+  colnames(fim_fixed)<-c("Ka","beta_Ka","V","beta_V","Cl","beta_Cl")
+  rownames(fim_fixed)<-c("Ka","beta_Ka","V","beta_V","Cl","beta_Cl")
+  varcov<-solve(FIM)[1:6,1:6]#we only include the columns of the fix effects
+
+  colnames(varcov)<-c("Ka","beta_Ka","V","beta_V","Cl","beta_Cl")
+  rownames(varcov)<-c("Ka","beta_Ka","V","beta_V","Cl","beta_Cl")
+  
+  SE_deltam <- deltaMethod(estimates,
+                           "-beta_V-(log((Ka*V)/Cl)+beta_Ka+beta_V-beta_Cl)*Cl*exp(beta_Cl)/(Ka*V*exp(beta_Ka+beta_V)-Cl*exp(beta_Cl))+(Cl/(Ka*V-Cl))*log(Ka*V/Cl)",vcov.=varcov)
+  
+  beta_cmax_estim<-SE_deltam[,1]
+  secmax<-SE_deltam[,2]
+  
+  # Une fois que les paramètres du modèle sont estimés, on peut faire le TOST sur
+  # Beta_AUC et Beta_Cmax
+  
+  #### TOST sur beta_AUC avec SE Asymptotique et comparaison au quantile d'une loi Normale
+ 
+  W1<-(-mod1@results@fixed.effects[6]+delta)/mod1@results@se.fixed[6]
+  ####W_delta
+  W2<-(-mod1@results@fixed.effects[6]-delta)/mod1@results@se.fixed[6]
+
+  if((W1>=quant) & (W2<=-quant)){
+    print("TOST Normal sur AUC Rejet de H0 : BE")
+  }else{
+    print("TOST Normal sur AUC Non rejet de H0")
+  }
+
+  
+  #### TOST sur beta_AUC avec SE Asymptotique et comparaison au quantile d'une loi de Student
+  if( (W1>=quant_stud) & (W2<=-quant_stud)){
+    print("TOST Student sur AUC Rejet de H0 : BE")
+  }else{
+    print("TOST Student sur AUC Non rejet de H0")
+  }
+
+  #### TOST sur beta_AUC avec SE Asymptotique corrigée par la correction de Gallant
+  
+  ####Gallant correction of the SE for beta_AUC
+  corrected_se_beta_cl<-mod1@results@se.fixed[6]*sqrt(n/quant_gallant)
+  corrected_se_beta_cl_serie<-c(corrected_se_beta_cl_serie,corrected_se_beta_cl)
+  
+  ####Gallant corrected Wald statistics for beta_AUC
+  ###W_-delta
+  W1_gallant<-(-mod1@results@fixed.effects[6]+delta)/corrected_se_beta_cl
+  ####W_delta
+  W2_gallant<-(-mod1@results@fixed.effects[6]-delta)/corrected_se_beta_cl
+
+  if( (W1_gallant>=quant_gallant) & (W2_gallant<=-quant_gallant)){
+    print("TOST Gallant sur AUC Rejet de H0 : BE")
+  }else{
+    print("TOST Gallant sur AUC Non Rejet de H0")
+    }
+  
+  #### TOST sur beta_Cmax avec SE Asymptotique et comparaison au quantile d'une loi Normale
+  
+  
+  W1cmax<-(beta_cmax_estim+delta)/secmax
+  W2cmax<-(beta_cmax_estim-delta)/secmax
+
+  if( (W1cmax>=quant) & (W2cmax<=-quant)){
+    print("TOST Normal sur Cmax Rejet de H0 : BE") 
+    }else{
+    print("TOST Normal sur Cmax non Rejet de H0")  }
+  
+  
+  #### TOST sur beta_Cmax avec SE Asymptotique et comparaison au quantile d'une loi de Student
+
+    if( (W1cmax>=quant_stud) & (W2cmax<=-quant_stud)){
+    print("TOST student sur Cmax Rejet de H0 : BE") 
+  }else{
+    print("TOST student sur Cmax non Rejet de H0")
+      }
+  
+  #### TOST sur beta_Cmax avec SE Asymptotique corrigée par Gallant
+  
+  ####Gallant corrected SE for beta_Cmax
+  corrected_se_beta_Cmax<-secmax*sqrt(n/quant_gallant)
+  ####W_-delta
+  W1_gallant_Cmax<-(beta_cmax_estim+delta)/corrected_se_beta_Cmax
+  ####W_delta
+  W2_gallant_Cmax<-(beta_cmax_estim-delta)/corrected_se_beta_Cmax
+
+  if( (W1_gallant_Cmax>=quant_gallant) & (W2_gallant_Cmax<=-quant_gallant)){
+    print("TOST Gallant sur cmax Rejet de H0 : BE")
+  }else{
+    print("TOST Gallant sur cmax Non Rejet de H0")
+  }
+  

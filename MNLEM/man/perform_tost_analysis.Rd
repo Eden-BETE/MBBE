@@ -6,24 +6,53 @@
 \usage{
 perform_tost_analysis(
   data_path,
+  model_type = "1cpt",
   dose_value = 4,
   nb_chains = 10,
   nb_iter = c(300, 100)
 )
 }
 \arguments{
-\item{data_path}{Path to the dataset (must be a \code{.txt} file).}
+\item{data_path}{Path to the dataset file (must be a \code{.txt} file with tabular structure).
+The file should contain the following \strong{columns} with headers \strong{in this exact order}:
+\itemize{
+\item \code{id}: Subject identifier (numeric or character).
+\item \code{dose}: Dose administered (numeric). If missing, it will be imputed with \code{dose_value}.
+\item \code{time}: Time point of concentration measurement (numeric).
+\item \code{treatment}: Treatment identifier ("R" for reference treatment and "T" for the test treatment).
+\item \code{concentration}: Measured drug concentration (numeric).
+}}
 
-\item{dose_value}{Numeric value of the dose administered (default: 4).}
+\item{model_type}{Character string specifying the PK model to use. Options:
+\itemize{
+\item \code{"1cpt"}: One-compartment model with first-order absorption (default)
+\item \code{"1cpt_tlag"}: One-compartment model with first-order absorption and lag time
+\item \code{"2cpt"}: Two-compartment model with first-order absorption
+\item \code{"2cpt_tlag"}: Two-compartment model with first-order absorption and lag time
+}}
 
-\item{nb_chains}{Number of MCMC chains for SAEM (default: 10).}
+\item{dose_value}{Numeric value of the dose administered, used for imputation only if all dose values are missing (default: 4).}
 
-\item{nb_iter}{Vector of number of iterations for SAEM (default: c(300, 100)).}
+\item{nb_chains}{Number of MCMC chains used by SAEM algorithm (default: 10).}
+
+\item{nb_iter}{A numeric vector of two integers: number of burn-in iterations and sampling iterations for SAEM (default: c(300, 100)).}
 }
 \value{
-Prints TOST results for AUC and Cmax (Normal, Student, Gallant).
+A list containing:
+\itemize{
+\item \code{saemix_object}: Fitted SAEM model object.
+\item \code{res_tost}: Results from the TOST procedure (normal, student, Gallant).
+\item \code{res_delta}: Delta method estimates.
+\item \code{summary}: Summary of bioequivalence results.
+}
 }
 \description{
-This function performs TOST (Two One-Sided Tests) for bioequivalence analysis on pharmacokinetic data (AUC and Cmax),
-using asymptotic SE (normal and student) and Gallant correction.
+This function performs TOST (Two One-Sided Tests) for bioequivalence analysis on pharmacokinetic parameters (AUC and Cmax),
+using asymptotic standard errors (Normal and Student) and Gallant correction.
+}
+\examples{
+\dontrun{
+perform_tost_analysis("path/to/data.txt", model_type = "1cpt")
+}
+
 }

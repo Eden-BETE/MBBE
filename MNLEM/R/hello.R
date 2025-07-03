@@ -22,35 +22,50 @@ validate_packages <- function() {
 #' @return Preprocessed data frame
 #' @keywords internal
 validate_and_load_data <- function(data_path) {
-  # File existence check
   if (!file.exists(data_path)) {
     stop("Data file not found at path: ", data_path)
   }
 
-  # Load data
-  tab <- read.table(data_path, header = TRUE, sep = " ", dec = ".", na.strings = ".")
+  # Fonction pour tester différents séparateurs
+  try_read <- function(sep) {
+    tryCatch({
+      read.table(data_path,
+                 header = TRUE,
+                 sep = sep,
+                 dec = ".",
+                 na.strings = c("", ".", "NA"),
+                 stringsAsFactors = FALSE,
+                 row.names = NULL,
+                 fill = TRUE)
+    }, error = function(e) NULL)
+  }
 
+  # Tester plusieurs séparateurs
+  possible_separators <- c("\t", " ", ",", ";")
+  for (sep in possible_separators) {
+    tab <- try_read(sep)
+    if (!is.null(tab) && ncol(tab) >= 5) break
+  }
+
+  if (is.null(tab) || ncol(tab) < 5) {
+    stop("Unable to read the dataset. Please check the file format or structure.")
+  }
+
+  # Standardiser les noms de colonnes
   names(tab) <- tolower(names(tab))
 
-  # Column validation
+  # Colonnes attendues
   required_cols <- c("id", "dose", "time", "treatment", "concentration")
-  expected_order <- c("id", "dose", "time", "treatment", "concentration")
-
   missing_cols <- setdiff(required_cols, names(tab))
   if (length(missing_cols) > 0) {
     stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
   }
 
-  # Check column order
-  if (!identical(names(tab)[1:5], expected_order)) {
-    warning("Column order should be: ", paste(expected_order, collapse = ", "),
-            ". Current order: ", paste(names(tab)[1:5], collapse = ", "),
-            ". Reordering columns automatically.")
-    tab <- tab[, expected_order]
-  }
+  # Réorganiser les colonnes dans l’ordre attendu
+  tab <- tab[, required_cols]
 
-  # Standardize column names
-  names(tab)[1:5] <- c("Id", "Dose", "Time", "Tr", "Concentration")
+  # Renommer pour uniformiser les noms utilisés plus tard
+  names(tab) <- c("Id", "Dose", "Time", "Tr", "Concentration")
 
   return(tab)
 }
@@ -236,33 +251,41 @@ get_model_config <- function(model_type) {
       nb_param = 3,
       psi0 = matrix(c(1, 20, 1), ncol = 3, byrow = TRUE),
       omega_init = diag(c(0.1, 0.1, 0.1)),
-      cmax_formula = "(exp(beta_CL) / (exp(beta_ka + beta_V) - exp(beta_CL))) * log(exp(beta_ka + beta_V)/exp(beta_CL))"
-
-
+      cmax_formula = "(exp(beta_CL) / (exp(beta_ka + beta_V) - exp(beta_CL))) *
+                      log(exp(beta_ka + beta_V) / exp(beta_CL))"
     ),
+
     "1cpt_tlag" = list(
       model = model_1cpt_tlag,
       param_names = c("ka", "V", "CL", "tlag"),
       nb_param = 4,
       psi0 = matrix(c(1.5, 0.5, 0.04, 0.5, 0, 0, 0, 0), ncol = 4, nrow = 2, byrow = TRUE),
       omega_init = diag(c(0.05, 0.0125, 0.05, 0.1)),
-      cmax_formula = "-beta_V"
+      cmax_formula = "(exp(beta_CL) / (exp(beta_ka + beta_V) - exp(beta_CL))) *
+                      exp(-exp(beta_CL - beta_V) * exp(beta_tlag)) *
+                      ((exp(beta_ka + beta_V) / exp(beta_CL))^
+                      (exp(beta_CL - beta_V) / (exp(beta_ka) - exp(beta_CL))))"
     ),
+
     "2cpt" = list(
       model = model_2cpt,
       param_names = c("ka", "V1", "CL", "Q", "V2"),
       nb_param = 5,
       psi0 = matrix(c(1.5, 0.5, 0.04, 0.1, 0.2, 0, 0, 0, 0, 0), ncol = 5, nrow = 2, byrow = TRUE),
       omega_init = diag(c(0.05, 0.0125, 0.05, 0.1, 0.1)),
-      cmax_formula = "-beta_V1"
+      cmax_formula = "(exp(beta_ka) * exp(beta_CL)) /
+                      (exp(beta_V1) * (exp(beta_Q) + exp(beta_CL)))"
     ),
+
     "2cpt_tlag" = list(
       model = model_2cpt_tlag,
       param_names = c("ka", "V1", "CL", "Q", "V2", "tlag"),
       nb_param = 6,
       psi0 = matrix(c(1.5, 0.5, 0.04, 0.1, 0.2, 0.5, 0, 0, 0, 0, 0, 0), ncol = 6, nrow = 2, byrow = TRUE),
       omega_init = diag(c(0.05, 0.0125, 0.05, 0.1, 0.1, 0.1)),
-      cmax_formula = "-beta_V1"
+      cmax_formula = "((exp(beta_ka) * exp(beta_CL)) /
+                       (exp(beta_V1) * (exp(beta_Q) + exp(beta_CL)))) *
+                       exp(-exp(beta_tlag))"
     )
   )
 

@@ -7,7 +7,6 @@
 perform_tost_analysis(
   data_path,
   model_type = "1cpt",
-  dose_value = 4,
   nb_chains = 10,
   nb_iter = c(300, 100)
 )
@@ -17,7 +16,7 @@ perform_tost_analysis(
 The file should contain the following \strong{columns} with headers \strong{in this exact order}:
 \itemize{
 \item \code{id}: Subject identifier (numeric or character).
-\item \code{dose}: Dose administered (numeric). If missing, it will be imputed with \code{dose_value}.
+\item \code{dose}: Dose administered (numeric).
 \item \code{time}: Time point of concentration measurement (numeric).
 \item \code{treatment}: Treatment identifier ("R" for reference treatment and "T" for the test treatment).
 \item \code{concentration}: Measured drug concentration (numeric).
@@ -30,8 +29,6 @@ The file should contain the following \strong{columns} with headers \strong{in t
 \item \code{"2cpt"}: Two-compartment model with first-order absorption
 \item \code{"2cpt_tlag"}: Two-compartment model with first-order absorption and lag time
 }}
-
-\item{dose_value}{Numeric value of the dose administered, used for imputation only if all dose values are missing (default: 4).}
 
 \item{nb_chains}{Number of MCMC chains used by SAEM algorithm (default: 10).}
 

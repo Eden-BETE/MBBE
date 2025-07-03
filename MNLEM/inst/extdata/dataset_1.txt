@@ -1,4 +1,4 @@
-Id Dose Time Tr Concentration
+Id Dose Time Treatment Concentration
 1 4 0 R .
 1 . 0.25 R 2.21663498964792
 1 . 0.5 R 3.84048442896433
